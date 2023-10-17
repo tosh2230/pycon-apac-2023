@@ -1,6 +1,7 @@
 import os
 import sys
 from logging import getLogger, basicConfig, INFO
+from importlib import util
 from importlib.abc import MetaPathFinder
 
 
@@ -74,24 +75,33 @@ def find(module: str):
 
     finder: MetaPathFinder
     for finder in sys.meta_path:
-        global sys_path_not_logged
-        if (
-            sys_path_not_logged
-            and hasattr(finder, "__name__")
-            and finder.__name__ == "PathFinder"
-        ):
-            logger.info(f"sys.path: {sys.path}")
-            sys_path_not_logged = False
-        try:
-            target_spec = finder.find_spec(
-                fullname=module, path=submodule_search_locations, target=None
-            )
-        except KeyError:
-            logger.error(f"'{module}' is not recognized as a package.")
-            exit()
+        target_spec = None
+        if hasattr(submodule_search_locations, "__iter__"):
+            # Namespace package
+            target_spec = util.find_spec(name=module)
+        else:
+            # Regular package
+            try:
+                global sys_path_not_logged
+                if (
+                    sys_path_not_logged
+                    and hasattr(finder, "__name__")
+                    and finder.__name__ == "PathFinder"
+                ):
+                    logger.info(f"sys.path: {sys.path}")
+                    sys_path_not_logged = False
+
+                target_spec = finder.find_spec(
+                    fullname=module, path=submodule_search_locations, target=None
+                )
+            except KeyError:
+                logger.error(f"'{module}' is not recognized as a package.")
 
         if target_spec:
-            logger.info(f"'{module}' is found by {finder.__name__}.")
+            if hasattr(submodule_search_locations, "__iter__"):
+                logger.info(f"'{module}' is found as a namespace package.")
+            else:
+                logger.info(f"'{module}' is found by {finder.__name__}.")
             break
 
     if not target_spec:
@@ -104,9 +114,14 @@ def find(module: str):
 
 if __name__ == "__main__":
     args = sys.argv
+    if len(args) > 2:
+        for sys_path in args[2].split(":"):
+            print(sys_path)
+            sys.path.append(sys_path)
     if len(args) > 1:
         find(module=args[1])
     else:
         logger.info(
-            "Please set a module path in the parameter, such as 'datetime.datetime'."
+            "Please set parameters. "
+            "arg1: package path, arg2: colon-separated sys.path strings"
         )
